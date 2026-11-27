@@ -1,0 +1,499 @@
+# NEXZ-hub-vip-for-murder-Mystery-v2
+Not use all games IS FOR!! MURDER MYSTERY.
+local Players = cloneref and cloneref(game:GetService("Players")) or game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+
+local KEY = "181914"
+local DISCORD_CODE = "M2dTGHZEy"
+local DISCORD_LINK = "https://discord.gg/" .. DISCORD_CODE
+
+if getgenv and getgenv().NexzCleanup then pcall(getgenv().NexzCleanup) end
+
+local PURPLE = Color3.fromRGB(150, 60, 255)
+local BLACK = Color3.fromRGB(10, 10, 14)
+local DARK = Color3.fromRGB(22, 22, 30)
+
+local connections, highlights = {}, {}
+local state = { espRoles = true, espInnocent = false, autoGun = false, autoKill = false, coins = false, killAll = false }
+local gui
+
+local function track(c) table.insert(connections, c) return c end
+
+local function cleanup()
+	for k in pairs(state) do state[k] = false end
+	for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+	connections = {}
+	for _, h in pairs(highlights) do pcall(function() h:Destroy() end) end
+	highlights = {}
+	if gui then gui:Destroy() end
+end
+if getgenv then getgenv().NexzCleanup = cleanup end
+
+-- ===== helpers =====
+local function getTool(plr: Player, name: string): Tool?
+	local char, bp = plr.Character, plr:FindFirstChildOfClass("Backpack")
+	return (char and char:FindFirstChild(name)) or (bp and bp:FindFirstChild(name)) or nil
+end
+
+local function getRole(plr: Player): string?
+	if getTool(plr, "Knife") then return "murder" end
+	if getTool(plr, "Gun") then return "sheriff" end
+	return nil
+end
+
+local function findPlayerByRole(role: string): Player?
+	for _, p in ipairs(Players:GetPlayers()) do
+		if getRole(p) == role then return p end
+	end
+	return nil
+end
+
+local function root(plr: Player): BasePart?
+	return plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function alive(plr: Player): boolean
+	local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+	return h ~= nil and h.Health > 0
+end
+
+local function getGunDrop(): BasePart?
+	local d = Workspace:FindFirstChild("GunDrop", true)
+	if d and d:IsA("BasePart") then return d end
+	return nil
+end
+
+local function touch(a: BasePart, b: BasePart)
+	pcall(function() firetouchinterest(a, b, 0) firetouchinterest(a, b, 1) end)
+end
+
+-- ===== ESP =====
+local function setHighlight(plr: Player, color: Color3?)
+	local h = highlights[plr]
+	if not color or not plr.Character then
+		if h then h:Destroy() highlights[plr] = nil end
+		return
+	end
+	if not h or h.Parent ~= plr.Character then
+		if h then h:Destroy() end
+		h = Instance.new("Highlight")
+		h.FillTransparency = 0.5
+		h.OutlineColor = Color3.new(1, 1, 1)
+		h.Parent = plr.Character
+		highlights[plr] = h
+	end
+	h.FillColor = color
+end
+
+local roleLabel
+local function updateESP()
+	local m, s = findPlayerByRole("murder"), findPlayerByRole("sheriff")
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LP then
+			if not alive(p) then setHighlight(p, nil)
+			elseif state.espRoles and p == m then setHighlight(p, Color3.fromRGB(255, 40, 40))
+			elseif state.espRoles and p == s then setHighlight(p, Color3.fromRGB(60, 120, 255))
+			elseif state.espInnocent and p ~= m and p ~= s then setHighlight(p, Color3.fromRGB(60, 255, 120))
+			else setHighlight(p, nil) end
+		end
+	end
+	if roleLabel then
+		roleLabel.Text = "Murder: " .. (m and m.DisplayName or "?") .. "\nSheriff: " .. (s and s.DisplayName or "?")
+	end
+end
+
+-- ===== auto gun =====
+local busy = false
+local function grabGun()
+	if busy then return end
+	local drop, r = getGunDrop(), root(LP)
+	if not drop or not r then return end
+	busy = true
+	local back = r.CFrame
+	r.CFrame = drop.CFrame + Vector3.new(0, 2, 0)
+	task.wait(0.15)
+	touch(r, drop)
+	task.wait(0.25)
+	if not state.autoKill then r.CFrame = back end
+	busy = false
+end
+
+-- ===== auto kill murder (com a arma) =====
+local lastShot = 0
+local function shootMurder()
+	if tick() - lastShot < 0.9 then return end
+	local char = LP.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local r = root(LP)
+	local gun = getTool(LP, "Gun")
+	local m = findPlayerByRole("murder")
+	local mr = m and root(m)
+	if not (hum and r and gun and mr and m ~= LP and alive(m)) then return end
+	if gun.Parent ~= char then hum:EquipTool(gun) task.wait(0.15) end
+	lastShot = tick()
+	r.CFrame = mr.CFrame * CFrame.new(0, 0, 7)
+	task.wait(0.08)
+	local aim = mr.Position + (mr.AssemblyLinearVelocity * 0.1)
+	local fired = pcall(function()
+		gun.Shoot:FireServer(CFrame.new(r.Position), CFrame.new(aim))
+	end)
+	if not fired then
+		fired = pcall(function()
+			gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, aim, "AH2")
+		end)
+	end
+	if not fired then pcall(function() gun:Activate() end) end
+end
+
+-- ===== kill all (como murder) =====
+local function killAllRound()
+	local char = LP.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local r = root(LP)
+	local knife = getTool(LP, "Knife")
+	if not (hum and r and knife) then return end
+	if knife.Parent ~= char then hum:EquipTool(knife) task.wait(0.15) end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if not state.killAll then break end
+		local tr = root(p)
+		if p ~= LP and tr and alive(p) then
+			r.CFrame = tr.CFrame * CFrame.new(0, 0, 2)
+			task.wait(0.05)
+			pcall(function() knife.Stab:FireServer("Slash") end)
+			local handle = knife:FindFirstChild("Handle")
+			if handle then touch(handle, tr) end
+			pcall(function() knife:Activate() end)
+			task.wait(0.12)
+		end
+	end
+end
+
+-- ===== moedas =====
+local function bagFull(): boolean
+	local ok, res = pcall(function()
+		return LP.PlayerGui.MainGUI.Game.CoinBags.Container.Coin.FullBagIcon.Visible
+	end)
+	return ok and res == true
+end
+
+local function getCoins(): { Instance }
+	for _, m in ipairs(Workspace:GetChildren()) do
+		local c = m:FindFirstChild("CoinContainer")
+		if c then return c:GetChildren() end
+	end
+	return {}
+end
+
+local infoLabel
+
+-- ===== loops =====
+task.spawn(function()
+	while task.wait(0.3) do
+		if not gui or not gui.Parent then break end
+		pcall(updateESP)
+		if state.autoGun and getGunDrop() then pcall(grabGun) end
+		if state.autoKill then pcall(shootMurder) end
+	end
+end)
+
+task.spawn(function()
+	local seen = {}
+	while task.wait(0.05) do
+		if not gui or not gui.Parent then break end
+		if state.coins then
+			if bagFull() then
+				if infoLabel then infoLabel.Text = "Saco cheio" end
+			else
+				if infoLabel then infoLabel.Text = "Coletando moedas..." end
+				local r = root(LP)
+				if r then
+					local best, bd
+					for _, c in ipairs(getCoins()) do
+						if c:IsA("BasePart") and c.Name == "Coin_Server" and (not seen[c] or tick() - seen[c] > 1.5) then
+							local d = (c.Position - r.Position).Magnitude
+							if not bd or d < bd then best, bd = c, d end
+						end
+					end
+					if best then
+						seen[best] = tick()
+						r.CFrame = best.CFrame
+						touch(r, best)
+					end
+				end
+			end
+		end
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.1) do
+		if not gui or not gui.Parent then break end
+		if state.killAll then pcall(killAllRound) end
+	end
+end)
+
+-- ===== UI =====
+local function corner(o, r) local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, r or 8) c.Parent = o end
+local function stroke(o, col, t) local s = Instance.new("UIStroke") s.Color = col s.Thickness = t or 1 s.Parent = o end
+
+gui = Instance.new("ScreenGui")
+gui.Name = "NexzHubVipV2"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local okParent = pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+if not okParent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local main = Instance.new("Frame")
+main.Size = UDim2.fromOffset(290, 390)
+main.Position = UDim2.new(0.5, -145, 0.5, -195)
+main.BackgroundColor3 = BLACK
+main.BorderSizePixel = 0
+main.ClipsDescendants = true
+main.Parent = gui
+corner(main, 12) stroke(main, PURPLE, 2)
+
+local top = Instance.new("Frame")
+top.Size = UDim2.new(1, 0, 0, 36)
+top.BackgroundColor3 = DARK
+top.BorderSizePixel = 0
+top.Parent = main
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.fromOffset(12, 0)
+title.BackgroundTransparency = 1
+title.Text = "NEXZ hub vip V2"
+title.TextColor3 = PURPLE
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = top
+
+local function topBtn(txt, x)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(26, 26)
+	b.Position = UDim2.new(1, x, 0, 5)
+	b.BackgroundColor3 = BLACK
+	b.Text = txt
+	b.TextColor3 = PURPLE
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 16
+	b.Parent = top
+	corner(b, 6)
+	return b
+end
+local minBtn = topBtn("-", -64)
+local closeBtn = topBtn("X", -34)
+
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, 0, 1, -36)
+body.Position = UDim2.fromOffset(0, 36)
+body.BackgroundTransparency = 1
+body.Parent = main
+
+-- drag
+do
+	local dragging, startPos, startInput
+	track(top.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging, startPos, startInput = true, main.Position, i.Position
+			i.Changed:Connect(function()
+				if i.UserInputState == Enum.UserInputState.End then dragging = false end
+			end)
+		end
+	end))
+	track(UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - startInput
+			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end))
+end
+
+-- minimize
+local minimized, fullSize = false, main.Size
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	body.Visible = not minimized
+	TweenService:Create(main, TweenInfo.new(0.2), { Size = minimized and UDim2.new(0, 290, 0, 36) or fullSize }):Play()
+	minBtn.Text = minimized and "+" or "-"
+end)
+closeBtn.MouseButton1Click:Connect(cleanup)
+
+-- painel principal (rolavel)
+local panel = Instance.new("ScrollingFrame")
+panel.Size = UDim2.new(1, 0, 1, 0)
+panel.BackgroundTransparency = 1
+panel.BorderSizePixel = 0
+panel.ScrollBarThickness = 3
+panel.ScrollBarImageColor3 = PURPLE
+panel.CanvasSize = UDim2.new(0, 0, 0, 0)
+panel.AutomaticCanvasSize = Enum.AutomaticSize.Y
+panel.Visible = false
+panel.Parent = body
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.Parent = panel
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 8)
+pad.PaddingBottom = UDim.new(0, 8)
+pad.Parent = panel
+
+roleLabel = Instance.new("TextLabel")
+roleLabel.Size = UDim2.new(1, -24, 0, 44)
+roleLabel.BackgroundColor3 = DARK
+roleLabel.TextColor3 = Color3.new(1, 1, 1)
+roleLabel.Font = Enum.Font.GothamMedium
+roleLabel.TextSize = 13
+roleLabel.Text = "Murder: ?\nSheriff: ?"
+roleLabel.LayoutOrder = 0
+roleLabel.Parent = panel
+corner(roleLabel, 8)
+
+infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(1, -24, 0, 18)
+infoLabel.BackgroundTransparency = 1
+infoLabel.TextColor3 = PURPLE
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextSize = 12
+infoLabel.Text = ""
+infoLabel.LayoutOrder = 100
+infoLabel.Parent = panel
+
+local function makeToggle(text, order, default, cb)
+	local f = Instance.new("TextButton")
+	f.Size = UDim2.new(1, -24, 0, 36)
+	f.BackgroundColor3 = DARK
+	f.Text = ""
+	f.AutoButtonColor = false
+	f.LayoutOrder = order
+	f.Parent = panel
+	corner(f, 8)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, -70, 1, 0)
+	l.Position = UDim2.fromOffset(10, 0)
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.TextColor3 = Color3.new(1, 1, 1)
+	l.Font = Enum.Font.Gotham
+	l.TextSize = 13
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Parent = f
+	local st = Instance.new("TextLabel")
+	st.Size = UDim2.fromOffset(46, 22)
+	st.Position = UDim2.new(1, -54, 0.5, -11)
+	st.Font = Enum.Font.GothamBold
+	st.TextSize = 12
+	st.Parent = f
+	corner(st, 6)
+	local on = default
+	local function paint()
+		st.Text = on and "ON" or "OFF"
+		st.BackgroundColor3 = on and PURPLE or BLACK
+		st.TextColor3 = on and Color3.new(1, 1, 1) or Color3.fromRGB(140, 140, 140)
+	end
+	paint()
+	f.MouseButton1Click:Connect(function() on = not on paint() cb(on) end)
+end
+
+makeToggle("ESP Murder / Sheriff", 1, true, function(v) state.espRoles = v end)
+makeToggle("ESP Inocentes", 2, false, function(v) state.espInnocent = v end)
+makeToggle("Auto TP Arma (sheriff morreu)", 3, false, function(v) state.autoGun = v end)
+makeToggle("Auto Matar Murder (atira)", 4, false, function(v) state.autoKill = v end)
+makeToggle("Auto Moedas (ate encher)", 5, false, function(v)
+	state.coins = v
+	infoLabel.Text = v and "Coletando moedas..." or ""
+end)
+makeToggle("Matar Todos (sendo Murder)", 6, false, function(v) state.killAll = v end)
+
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(1, -24, 0, 20)
+credit.BackgroundTransparency = 1
+credit.Text = "NEXZ hub vip V2"
+credit.TextColor3 = PURPLE
+credit.Font = Enum.Font.GothamBold
+credit.TextSize = 11
+credit.LayoutOrder = 101
+credit.Parent = panel
+
+-- painel da key
+local keyPanel = Instance.new("Frame")
+keyPanel.Size = UDim2.new(1, 0, 1, 0)
+keyPanel.BackgroundTransparency = 1
+keyPanel.Parent = body
+
+local keyBox = Instance.new("TextBox")
+keyBox.Size = UDim2.new(1, -24, 0, 38)
+keyBox.Position = UDim2.fromOffset(12, 40)
+keyBox.BackgroundColor3 = DARK
+keyBox.PlaceholderText = "Digite a Key"
+keyBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
+keyBox.Text = ""
+keyBox.TextColor3 = Color3.new(1, 1, 1)
+keyBox.Font = Enum.Font.Gotham
+keyBox.TextSize = 14
+keyBox.ClearTextOnFocus = false
+keyBox.Parent = keyPanel
+corner(keyBox, 8) stroke(keyBox, PURPLE, 1)
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -24, 0, 20)
+status.Position = UDim2.fromOffset(12, 84)
+status.BackgroundTransparency = 1
+status.Text = ""
+status.TextColor3 = Color3.fromRGB(255, 80, 80)
+status.Font = Enum.Font.Gotham
+status.TextSize = 12
+status.Parent = keyPanel
+
+local function bigBtn(txt, y, filled)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -24, 0, 38)
+	b.Position = UDim2.fromOffset(12, y)
+	b.BackgroundColor3 = filled and PURPLE or DARK
+	b.Text = txt
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.Parent = keyPanel
+	corner(b, 8)
+	return b
+end
+
+local checkBtn = bigBtn("Verificar Key", 116, true)
+local getKeyBtn = bigBtn("Pegar Key", 162, false)
+
+checkBtn.MouseButton1Click:Connect(function()
+	if keyBox.Text == KEY then
+		keyPanel.Visible = false
+		panel.Visible = true
+		updateESP()
+	else
+		status.TextColor3 = Color3.fromRGB(255, 80, 80)
+		status.Text = "Key invalida."
+	end
+end)
+
+getKeyBtn.MouseButton1Click:Connect(function()
+	if setclipboard then pcall(setclipboard, DISCORD_LINK) end
+	local req = request or http_request or (syn and syn.request)
+	if req then
+		pcall(function()
+			req({
+				Url = "http://127.0.0.1:6463/rpc?v=1",
+				Method = "POST",
+				Headers = { ["Content-Type"] = "application/json", ["Origin"] = "https://discord.com" },
+				Body = HttpService:JSONEncode({ cmd = "INVITE_BROWSER", args = { code = DISCORD_CODE }, nonce = HttpService:GenerateGUID(false) }),
+			})
+		end)
+	end
+	status.TextColor3 = PURPLE
+	status.Text = "Link do Discord copiado!"
+end)
+           
