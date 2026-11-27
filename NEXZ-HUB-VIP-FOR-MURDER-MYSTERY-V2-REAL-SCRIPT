@@ -1,5 +1,3 @@
-# NEXZ-hub-vip-for-murder-Mystery-v2
-Not use all games IS FOR!! MURDER MYSTERY.
 local Players = cloneref and cloneref(game:GetService("Players")) or game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
